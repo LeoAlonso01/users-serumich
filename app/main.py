@@ -5,10 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, EmailStr
 from .settings import CORS_ORIGINS
 from .db import get_conn
-from typing import Optional
+from typing import Optional, List
 from fastapi import Query
 from fastapi import Depends
-from md5hash import md5
+from hashlib import md5
 from .auth import login_ok, issue_token, require_auth
 
 
@@ -89,13 +89,13 @@ def next_username(conn, base: str) -> str:
 # ---------- Modelos ----------
 class UreOut(BaseModel):
     id: int
-    cve_ure: str | None = None
-    tag: str | None = None
-    razon_social: str | None = None
+    cve_ure: Optional[str] = None
+    tag: Optional[str] = None
+    razon_social: Optional[str] = None
 
 class UserCreateIn(BaseModel):
     nombre: str = Field(min_length=3)
-    email: str | None = None
+    email: Optional[str] = None
     password: str = Field(min_length=1)
     unidad_responsable_id: int
 
@@ -114,20 +114,20 @@ class LoginOut(BaseModel):
 
 class UserOut(BaseModel):
     id: int
-    nombre: str | None = None
-    email: str | None = None
-    username: str | None = None
-    unidad_responsable_id: int | None = None
-    cve_ure: str | None = None
-    unidad_tag: str | None = None
-    fecha_cambio: str | None = None
-    ultima_actividad: str | None = None
-    es_titular: bool | None = None
-    estatus_general_id: int | None = None
+    nombre: Optional[str] = None
+    email: Optional[str] = None
+    username: Optional[str] = None
+    unidad_responsable_id: Optional[int] = None
+    cve_ure: Optional[str] = None
+    unidad_tag: Optional[str] = None
+    fecha_cambio: Optional[str] = None
+    ultima_actividad: Optional[str] = None
+    es_titular: Optional[bool] = None
+    estatus_general_id: Optional[int] = None
 
 
 # ---------- Endpoints ----------
-@app.get("/unidades", response_model=list[UreOut])
+@app.get("/unidades", response_model=List[UreOut])
 def search_unidades(q: str = Query(default="", max_length=80)):
     q = q.strip()
     if len(q) < 2:
@@ -212,7 +212,7 @@ def get_usuarios(
       supervisor
     FROM public.situm_dep_usuarios
     """
-    params = {"limit": limit, "offset": offset}
+    params: dict = {"limit": limit, "offset": offset}
 
     if q:
         sql += """

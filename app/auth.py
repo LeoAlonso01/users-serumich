@@ -1,6 +1,7 @@
 import time
 import jwt
 from fastapi import HTTPException, Header
+from typing import Optional
 from .settings import ADMIN_USER, ADMIN_PASS, JWT_SECRET
 
 JWT_ALG = "HS256"
@@ -14,7 +15,7 @@ def issue_token(user: str) -> str:
     payload = {"sub": user, "iat": now, "exp": now + JWT_TTL_SECONDS}
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
-def require_auth(authorization: str | None = Header(default=None)) -> str:
+def require_auth(authorization: Optional[str] = Header(default=None)) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Falta token Bearer.")
     token = authorization.split(" ", 1)[1].strip()
