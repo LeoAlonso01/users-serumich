@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field, EmailStr
 from .settings import CORS_ORIGINS
 from .db import get_conn
 from typing import Optional
+from fastapi import Query
 from fastapi import Depends
+from md5hash import md5
 from .auth import login_ok, issue_token, require_auth
 
 
@@ -33,6 +35,10 @@ def normalize_text(s: str) -> str:
     s = re.sub(r"[^a-z0-9\s]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
+
+def md5hash(s: str) -> str:
+    return md5(s.encode()).hexdigest()
 
 def split_name(nombre: str):
     parts = [p for p in normalize_text(nombre).split(" ") if p and p not in STOPWORDS]
@@ -182,48 +188,43 @@ def create_usuario(payload: UserCreateIn):
 
         return row
 
-@app.get("/usuarios", response_model=list[UserOut])
+@app.get("/usuarios")
 def get_usuarios(
     q: Optional[str] = None,
-    limit: int = 50,
-    offset: int = 0,
-    _user: str = Depends(require_auth),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
 ):
-    if limit < 1:
-        limit = 1
-    if limit > 100:
-        limit = 100
-    if offset < 0:
-        offset = 0
-
     q = (q or "").strip()
-    q_param = q if q else None
 
     sql = """
     SELECT
-      u.id,
-      u.nombre,
-      u.email,
-      u.username,
-      u.unidad_responsable_id,
-      ur.cve_ure,
-      ur.tag AS unidad_tag,
-      u.fecha_cambio,
-      u.ultima_actividad,
-      u.es_titular,
-      u.estatus_general_id
-    FROM public.situm_dep_usuarios u
-    LEFT JOIN public.situm_unidades_responsables ur
-      ON ur.id = u.unidad_responsable_id
-    WHERE
-      (%(q)s IS NULL)
-      OR u.username ILIKE '%%' || %(q)s || '%%'
-      OR u.nombre   ILIKE '%%' || %(q)s || '%%'
-      OR u.email    ILIKE '%%' || %(q)s || '%%'
-    ORDER BY u.id DESC
-    LIMIT %(limit)s OFFSET %(offset)s;
+      id,
+      empresa_id,
+      nombre,
+      email,
+      username,
+      unidad_responsable_id,
+      fecha_cambio,
+      ultima_actividad,
+      es_titular,
+      estatus_general_id,
+      grupo_id,
+      supervisor
+    FROM public.situm_dep_usuarios
     """
-    with get_conn() as conn:
-        rows = conn.execute(sql, {"q": q_param, "limit": limit, "offset": offset}).fetchall()
-        return rows
+    params = {"limit": limit, "offset": offset}
 
+    if q:
+        sql += """
+        WHERE
+          username ILIKE %(pattern)s
+          OR nombre ILIKE %(pattern)s
+          OR email ILIKE %(pattern)s
+        """
+        params["pattern"] = f"%{q}%"
+
+    sql += " ORDER BY id DESC LIMIT %(limit)s OFFSET %(offset)s;"
+
+    with get_conn() as conn:
+        rows = conn.execute(sql, params).fetchall()
+        return rows
