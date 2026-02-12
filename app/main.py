@@ -5,6 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, EmailStr
 from .settings import CORS_ORIGINS
 from .db import get_conn
+from typing import Optional
+from fastapi import Depends
+from .auth import login_ok, issue_token, require_auth
+
 
 app = FastAPI(title="URE Users API")
 
@@ -94,6 +98,28 @@ class UserCreateOut(BaseModel):
     username: str
     unidad_responsable_id: int
 
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+class LoginOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+class UserOut(BaseModel):
+    id: int
+    nombre: str | None = None
+    email: str | None = None
+    username: str | None = None
+    unidad_responsable_id: int | None = None
+    cve_ure: str | None = None
+    unidad_tag: str | None = None
+    fecha_cambio: str | None = None
+    ultima_actividad: str | None = None
+    es_titular: bool | None = None
+    estatus_general_id: int | None = None
+
+
 # ---------- Endpoints ----------
 @app.get("/unidades", response_model=list[UreOut])
 def search_unidades(q: str = Query(default="", max_length=80)):
@@ -155,3 +181,49 @@ def create_usuario(payload: UserCreateIn):
         conn.commit()
 
         return row
+
+@app.get("/usuarios", response_model=list[UserOut])
+def get_usuarios(
+    q: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    _user: str = Depends(require_auth),
+):
+    if limit < 1:
+        limit = 1
+    if limit > 100:
+        limit = 100
+    if offset < 0:
+        offset = 0
+
+    q = (q or "").strip()
+    q_param = q if q else None
+
+    sql = """
+    SELECT
+      u.id,
+      u.nombre,
+      u.email,
+      u.username,
+      u.unidad_responsable_id,
+      ur.cve_ure,
+      ur.tag AS unidad_tag,
+      u.fecha_cambio,
+      u.ultima_actividad,
+      u.es_titular,
+      u.estatus_general_id
+    FROM public.situm_dep_usuarios u
+    LEFT JOIN public.situm_unidades_responsables ur
+      ON ur.id = u.unidad_responsable_id
+    WHERE
+      (%(q)s IS NULL)
+      OR u.username ILIKE '%%' || %(q)s || '%%'
+      OR u.nombre   ILIKE '%%' || %(q)s || '%%'
+      OR u.email    ILIKE '%%' || %(q)s || '%%'
+    ORDER BY u.id DESC
+    LIMIT %(limit)s OFFSET %(offset)s;
+    """
+    with get_conn() as conn:
+        rows = conn.execute(sql, {"q": q_param, "limit": limit, "offset": offset}).fetchall()
+        return rows
+
